@@ -64,7 +64,7 @@ def turn2str(turn):
         return "Black"
 
 
-def mk_latex_puzzle(puzzle):
+def mk_latex_puzzle(puzzle, counter):
     board = chess.Board(fen=puzzle["FEN"])
 
     moves = puzzle["Moves"].split(" ")
@@ -73,12 +73,27 @@ def mk_latex_puzzle(puzzle):
 
     latex = "\\newgame \n"
     latex += "\n"
+    latex += f"{counter} {turn2str(board.turn)} to move. \n \n"
     latex += "\\fenboard{" + board.fen() + "}"
     latex += "\n"
     latex += "\n \n"
     latex += "\\showboard"
     latex += "\n \n "
-    latex += f"{turn2str(board.turn)} to move. \n \n"
+    latex += "\n \n"
+
+    return latex
+
+def mk_latex_puzzle_solution(puzzle, counter):
+    board = chess.Board(fen=puzzle["FEN"])
+
+    moves = puzzle["Moves"].split(" ")
+    moves = [chess.Move.from_uci(move) for move in moves]
+    board.push(moves[0])
+
+    latex = "\\newgame \n"
+    latex += "\n"
+    latex += f"{counter} {turn2str(board.turn)} to move. \n \n"
+    latex += "\n \n "
     latex += "Solution: \\mainline{" + board.variation_san(moves[1:]) + "}"
     latex += "\n \n"
 
@@ -89,16 +104,34 @@ def mk_book_from_list(L, level=0, book=True) -> str:
     latex = ""
     for l in L:
         if l[1] == "puzzles":
+            section = get_section_from_level(l[0], level, book)
             latex += "\\newpage \n"
-            latex += get_section_from_level(l[0], level, book)
+            latex += section
             latex += "\n"
             latex += l[3]
-            latex += "\\begin{multicols}{2} \n"
+            latex += "\\begin{multicols}{3} \n"
+            counter = 1
+            for p in l[2]:
+                print(p);
+                latex += "\\begin{samepage} \n"
+                latex += mk_latex_puzzle(p, section + "." + str(counter))
+                latex += "\\end{samepage}"
+                counter += 1
+            latex += "\\end{multicols} \n"
+            # put solution to separate page
+            latex += "\\newpage \n"
+            latex += section
+            latex += "\n"
+            latex += l[3]
+            counter = 1
+            latex += "\\begin{multicols}{3} \n"
             for p in l[2]:
                 latex += "\\begin{samepage} \n"
-                latex += mk_latex_puzzle(p)
+                latex += mk_latex_puzzle_solution(p, section + "." + str(counter))
                 latex += "\\end{samepage}"
+                counter += 1
             latex += "\\end{multicols} \n"
+
         else:
             latex += get_section_from_level(l[0], level, book)
             latex += "\n"
@@ -171,6 +204,9 @@ if __name__ == "__main__":
     L = []
 
     for diff in range(args.min_rating, args.max_rating, args.step_size):
+        # Convert the 'Rating' column to numeric, forcing errors to NaN
+        puzzles["Rating"] = pd.to_numeric(puzzles["Rating"], errors='coerce')
+
         p = puzzles[puzzles["Rating"] <= diff]
 
         if len(p) < 10000:
