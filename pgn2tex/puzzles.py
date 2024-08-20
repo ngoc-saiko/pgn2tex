@@ -128,7 +128,7 @@ def mk_book_from_list(L, level=0, book=True) -> str:
                 latex += mk_latex_puzzle(p, counter)
                 latex += "\\end{samepage}"
                 # new page after 9 puzzles
-                if counter % 9 == 0:
+                if counter % 9 == 0 and counter < len(l[2]):
                     latex += "\\end{multicols} \n"
                     latex += "\\newpage \n"
                     latex += "\n"
