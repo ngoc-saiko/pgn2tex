@@ -27,17 +27,14 @@ class PuzzleTheme:
 def open_puzzles(path: Path):
     puzzles = pd.read_csv(
         path,
-        names=[
-            "PuzzleId",
-            "FEN",
-            "Moves",
-            "Rating",
-            "RatingDeviation",
-            "Popularity",
-            "NbPlays",
-            "Themes",
-            "GameUrl",
-        ],
+        encoding='utf-8',
+        dtype={
+            "Rating": "float64",
+            "RatingDeviation": "float64",
+            "Popularity": "float64",
+            "NbPlays": "float64",
+        },
+        na_values = ["", "NA", "null"],  # Handle common non-numeric values as NaN
     )
     return puzzles
 
@@ -72,12 +69,13 @@ def mk_latex_puzzle(puzzle, counter):
     board.push(moves[0])
 
     latex = "\\newgame \n"
-    latex += "\n"
+    latex += "\\vspace{2cm}"
+    latex += "\n \n \n \n \n"
     latex += f"{counter} {turn2str(board.turn)} to move. \n \n"
     latex += "\\fenboard{" + board.fen() + "}"
     latex += "\n"
     latex += "\n \n"
-    latex += "\\showboard"
+    latex += "\\scalebox{0.8}{\\showboard}"
     latex += "\n \n "
     latex += "\n \n"
 
@@ -89,12 +87,13 @@ def mk_latex_puzzle_solution(puzzle, counter):
     moves = puzzle["Moves"].split(" ")
     moves = [chess.Move.from_uci(move) for move in moves]
     board.push(moves[0])
+    solution = board.variation_san(moves[1:])
+    # escape the # character
+    solution = solution.replace("#", "\\#")
 
-    latex = "\\newgame \n"
-    latex += "\n"
-    latex += f"{counter} {turn2str(board.turn)} to move. \n \n"
+    latex = f"{counter} {turn2str(board.turn)} to move. \n \n"
     latex += "\n \n "
-    latex += "Solution: \\mainline{" + board.variation_san(moves[1:]) + "}"
+    latex += "Solution: {" + solution + "}"
     latex += "\n \n"
 
     return latex
@@ -104,30 +103,28 @@ def mk_book_from_list(L, level=0, book=True) -> str:
     latex = ""
     for l in L:
         if l[1] == "puzzles":
-            section = get_section_from_level(l[0], level, book)
             latex += "\\newpage \n"
-            latex += section
+            latex += get_section_from_level(l[0], level, book)
             latex += "\n"
             latex += l[3]
             latex += "\\begin{multicols}{3} \n"
             counter = 1
             for p in l[2]:
-                print(p);
                 latex += "\\begin{samepage} \n"
-                latex += mk_latex_puzzle(p, section + "." + str(counter))
+                latex += mk_latex_puzzle(p, str(counter))
                 latex += "\\end{samepage}"
                 counter += 1
             latex += "\\end{multicols} \n"
             # put solution to separate page
             latex += "\\newpage \n"
-            latex += section
+            latex += "Solution to the puzzles. \n"
             latex += "\n"
             latex += l[3]
             counter = 1
             latex += "\\begin{multicols}{3} \n"
             for p in l[2]:
                 latex += "\\begin{samepage} \n"
-                latex += mk_latex_puzzle_solution(p, section + "." + str(counter))
+                latex += mk_latex_puzzle_solution(p, str(counter))
                 latex += "\\end{samepage}"
                 counter += 1
             latex += "\\end{multicols} \n"
@@ -152,7 +149,7 @@ if __name__ == "__main__":
         "--problems",
         "-p",
         type=int,
-        default=5,
+        default=9,
         help="Max number of problems to sample in each theme/rating range.",
     )
     parser.add_argument(
@@ -181,7 +178,7 @@ if __name__ == "__main__":
         "--max-rating",
         type=int,
         help="Maximum rating of the problems.",
-        default=2500,
+        default=1500,
     )
     parser.add_argument(
         "--template",
@@ -208,12 +205,11 @@ if __name__ == "__main__":
         puzzles["Rating"] = pd.to_numeric(puzzles["Rating"], errors='coerce')
 
         p = puzzles[puzzles["Rating"] <= diff]
-
-        if len(p) < 10000:
+        if len(p) < 1000:
             p = p.sample(len(p))
         else:
             p = p.sample(
-                10000
+                1000
             )  # We take a subsample of the puzzles so the filtering is not too slow
         diff_L = []
         for tag, theme in themes.items():
@@ -238,10 +234,14 @@ if __name__ == "__main__":
 
     template = Template(template)
 
+    frontpage_path = os.path.abspath(args.front_page) if args.front_page else None
+    # change path from \ to / for latex to work in Windows
+    frontpage_path = frontpage_path.replace("\\", "/")
+
     frontpage = (
-        ("\\includepdf[pages=1, noautoscale]{%s}" % os.path.abspath(args.front_page))
+        ("\\includepdf[pages=1, noautoscale]{%s}" % frontpage_path)
         if args.front_page
         else ""
     )
-    with open(args.output, "w") as fd:
+    with open(args.output, "w", encoding='utf-8') as fd:
         fd.write(template.substitute(frontpage=frontpage, content=content))
