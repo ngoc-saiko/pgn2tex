@@ -67,21 +67,25 @@ def mk_latex_puzzle(puzzle, counter):
     board = chess.Board(fen=puzzle["FEN"])
 
     moves = puzzle["Moves"].split(" ")
-    moves = [chess.Move.from_uci(move) for move in moves]
-    board.push(moves[0])
 
     latex = ""
     if counter > 9:
         latex += "\\vspace{2.2cm} \n \n"
     else:
         latex += "\\vspace{2cm} \n \n"
+
+    # calculate number of moves needed for one side to solve the puzzle
+    # based on len of moves variable
+    # example: len = 1, 2 --> need 1 move
+    # len = 3, 4 --> need 2 moves
+    num_of_moves = len(moves) // 2
         
     # add section to the puzzle
     puzzle_id = puzzle["PuzzleId"]
     latex += "\\newgame \n"
     latex += "\n \n \n \n \n"
     latex += "\\phantomsection \n"
-    latex += f"{counter}. \\textbf{{{turn2str(board.turn)}}} to move \\pageref{{solution-{puzzle_id}}}. \n"
+    latex += f"{counter}. \\textbf{{{turn2str(board.turn)}}}, solved in {num_of_moves} moves \\pageref{{solution-{puzzle_id}}}. \n"
     latex += f"\\label{{puzzle-{puzzle_id}}} \n"
     latex += "\\fenboard{" + board.fen() + "}"
     latex += "\n"
@@ -101,12 +105,14 @@ def mk_latex_puzzle_solution(puzzle, counter):
     # escape the # character
     solution = solution.replace("#", "\\#")
 
-    latex = f"\\noindent\\textbf{{{counter}. {turn2str(board.turn)} to move. }}\n"
+    latex = f"\\noindent \\textbf{{{counter}. {turn2str(board.turn)} to move. }}\n"
     latex += "\\phantomsection \n"
-    latex += f"\\label{{solution-{puzzle['PuzzleId']}}}\n \n"
+    latex += f"\\noindent \\label{{solution-{puzzle['PuzzleId']}}}\n \n"
     latex += "\n \n"
-    latex += "{" + solution + "} \n \n"
-    latex += f"Puzzle: \\pageref{{puzzle-{puzzle['PuzzleId']}}}"
+    latex += "\\noindent {" + solution + "} \n \n"
+    # show theme of the puzzle
+    latex += f"\\noindent Theme: {puzzle['Themes']} \n \n"
+    latex += f"\\noindent Puzzle: \\pageref{{puzzle-{puzzle['PuzzleId']}}}"
     latex += "\n \n"
     latex += "\\vspace{0.2cm} \n \n"
 
@@ -248,8 +254,8 @@ if __name__ == "__main__":
         # puzzles[Themes] is a string with themes separated by space
         # remove all the themes except the first one
         # only do it when args.theme is None
-        if args.theme is None:
-            puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
+#        if args.theme is None:
+#            puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
 
         p = puzzles[puzzles["Rating"] <= diff]
 
