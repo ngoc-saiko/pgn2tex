@@ -247,7 +247,9 @@ if __name__ == "__main__":
     for diff in range(args.min_rating, args.max_rating, args.step_size):
         # puzzles[Themes] is a string with themes separated by space
         # remove all the themes except the first one
-        puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
+        # only do it when args.theme is None
+        if args.theme is None:
+            puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
 
         p = puzzles[puzzles["Rating"] <= diff]
 
