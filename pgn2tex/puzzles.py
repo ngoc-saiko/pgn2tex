@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Tuple, Optional, List
 from string import Template
 import os
+import math
 
 import chess.pgn
 import chess
@@ -15,6 +16,7 @@ from argparse import ArgumentParser, HelpFormatter
 from dataclasses import dataclass
 
 from utils import load_pgn, get_section_from_level
+from datetime import datetime
 
 
 @dataclass
@@ -27,17 +29,14 @@ class PuzzleTheme:
 def open_puzzles(path: Path):
     puzzles = pd.read_csv(
         path,
-        names=[
-            "PuzzleId",
-            "FEN",
-            "Moves",
-            "Rating",
-            "RatingDeviation",
-            "Popularity",
-            "NbPlays",
-            "Themes",
-            "GameUrl",
-        ],
+        encoding='utf-8',
+        dtype={
+            "Rating": "float64",
+            "RatingDeviation": "float64",
+            "Popularity": "float64",
+            "NbPlays": "float64",
+        },
+        na_values = ["", "NA", "null"],  # Handle common non-numeric values as NaN
     )
     return puzzles
 
@@ -64,23 +63,52 @@ def turn2str(turn):
         return "Black"
 
 
-def mk_latex_puzzle(puzzle):
+def mk_latex_puzzle(puzzle, counter):
     board = chess.Board(fen=puzzle["FEN"])
 
     moves = puzzle["Moves"].split(" ")
     moves = [chess.Move.from_uci(move) for move in moves]
     board.push(moves[0])
 
-    latex = "\\newgame \n"
-    latex += "\n"
+    latex = ""
+    if counter > 9:
+        latex += "\\vspace{2.2cm} \n \n"
+    else:
+        latex += "\\vspace{2cm} \n \n"
+        
+    # add section to the puzzle
+    puzzle_id = puzzle["PuzzleId"]
+    latex += "\\newgame \n"
+    latex += "\n \n \n \n \n"
+    latex += "\\phantomsection \n"
+    latex += f"{counter}. \\textbf{{{turn2str(board.turn)}}} to move \\pageref{{solution-{puzzle_id}}}. \n"
+    latex += f"\\label{{puzzle-{puzzle_id}}} \n"
     latex += "\\fenboard{" + board.fen() + "}"
     latex += "\n"
     latex += "\n \n"
-    latex += "\\showboard"
-    latex += "\n \n "
-    latex += f"{turn2str(board.turn)} to move. \n \n"
-    latex += "Solution: \\mainline{" + board.variation_san(moves[1:]) + "}"
+    latex += "\\scalebox{0.8}{\\showboard}"
     latex += "\n \n"
+
+    return latex
+
+def mk_latex_puzzle_solution(puzzle, counter):
+    board = chess.Board(fen=puzzle["FEN"])
+
+    moves = puzzle["Moves"].split(" ")
+    moves = [chess.Move.from_uci(move) for move in moves]
+    board.push(moves[0])
+    solution = board.variation_san(moves[1:])
+    # escape the # character
+    solution = solution.replace("#", "\\#")
+
+    latex = f"\\noindent\\textbf{{{counter}. {turn2str(board.turn)} to move. }}\n"
+    latex += "\\phantomsection \n"
+    latex += f"\\label{{solution-{puzzle['PuzzleId']}}}\n \n"
+    latex += "\n \n"
+    latex += "{" + solution + "} \n \n"
+    latex += f"Puzzle: \\pageref{{puzzle-{puzzle['PuzzleId']}}}"
+    latex += "\n \n"
+    latex += "\\vspace{0.2cm} \n \n"
 
     return latex
 
@@ -93,12 +121,38 @@ def mk_book_from_list(L, level=0, book=True) -> str:
             latex += get_section_from_level(l[0], level, book)
             latex += "\n"
             latex += l[3]
-            latex += "\\begin{multicols}{2} \n"
+            latex += "\\begin{multicols}{3} \n"
+            counter = 1
             for p in l[2]:
                 latex += "\\begin{samepage} \n"
-                latex += mk_latex_puzzle(p)
+                latex += mk_latex_puzzle(p, counter)
                 latex += "\\end{samepage}"
+                # new page after 9 puzzles
+                if counter % 9 == 0 and counter < len(l[2]):
+                    latex += "\\end{multicols} \n"
+                    latex += "\\newpage \n"
+                    latex += "\n"
+                    latex += l[3]
+                    latex += "\n"
+                    latex += "\\begin{multicols}{3} \n"
+                counter += 1
             latex += "\\end{multicols} \n"
+            # put solution to separate page
+            latex += "\\newpage \n"
+            latex += f"\\noindent\\textbf{{Solution for {l[0]}}} % Custom heading \n"
+            latex += "\n"
+            latex += l[3]
+            counter = 1
+            latex += "\\begin{multicols}{3} \n"
+            for p in l[2]:
+                latex += "\\begin{samepage} \n"
+                latex += mk_latex_puzzle_solution(p, counter)
+                latex += "\\end{samepage}"
+                latex += "\n \n"
+
+                counter += 1
+            latex += "\\end{multicols} \n"
+
         else:
             latex += get_section_from_level(l[0], level, book)
             latex += "\n"
@@ -119,7 +173,7 @@ if __name__ == "__main__":
         "--problems",
         "-p",
         type=int,
-        default=5,
+        default=0,
         help="Max number of problems to sample in each theme/rating range.",
     )
     parser.add_argument(
@@ -164,6 +218,26 @@ if __name__ == "__main__":
 
     parser.add_argument("--output", "-o", type=Path, help="Output file", default=None)
 
+    # add argument page, default = 1
+    parser.add_argument(
+        "--page",
+        "-page",
+        type=int,
+        default=1,
+    )
+
+    # add argument page_number, default = 5000
+    parser.add_argument(
+        "--page_number",
+        "-page_number",
+        type=int,
+        default=500,
+    )
+
+    # print current start time
+    current_time = datetime.now().time()
+    print("Start Time:", current_time)
+
     args = parser.parse_args()
 
     puzzles = open_puzzles(Path("data/lichess_db_puzzle.csv"))
@@ -171,14 +245,21 @@ if __name__ == "__main__":
     L = []
 
     for diff in range(args.min_rating, args.max_rating, args.step_size):
+        # puzzles[Themes] is a string with themes separated by space
+        # remove all the themes except the first one
+        # only do it when args.theme is None
+        if args.theme is None:
+            puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
+
         p = puzzles[puzzles["Rating"] <= diff]
 
-        if len(p) < 10000:
+        if len(p) < args.page_number:
             p = p.sample(len(p))
         else:
             p = p.sample(
-                10000
+                args.page_number
             )  # We take a subsample of the puzzles so the filtering is not too slow
+
         diff_L = []
         for tag, theme in themes.items():
             if args.theme is not None and tag not in args.theme:
@@ -187,7 +268,16 @@ if __name__ == "__main__":
             pt = p[p["Themes"].str.contains(tag)]
 
             if len(pt):
-                pt = pt.sample(min(len(pt), args.problems)).to_dict("records")
+                if (args.problems is not None and args.problems > 0):
+                    sample_count = min(len(pt), args.problems)
+                else:
+                    sample_count = len(pt)
+                # puzzles are displayed in 3 columns
+                # so we need to make sure that the number of puzzles is divisible by 3
+                sample_count = sample_count - sample_count % 3
+                if sample_count == 0:
+                    continue
+                pt = pt.sample(sample_count).to_dict("records")
                 diff_L.append((theme.name, "puzzles", pt, theme.desc))
 
         L.append((f"{diff} rated problems.", "list", diff_L, ""))
@@ -202,10 +292,20 @@ if __name__ == "__main__":
 
     template = Template(template)
 
+    frontpage_path = os.path.abspath(args.front_page) if args.front_page else None
+    # change path from \ to / for latex to work in Windows
+    frontpage_path = frontpage_path.replace("\\", "/")
+
     frontpage = (
-        ("\\includepdf[pages=1, noautoscale]{%s}" % os.path.abspath(args.front_page))
+        ("\\includepdf[pages=1, noautoscale]{%s}" % frontpage_path)
         if args.front_page
         else ""
     )
-    with open(args.output, "w") as fd:
+    with open(args.output, "w", encoding='utf-8') as fd:
         fd.write(template.substitute(frontpage=frontpage, content=content))
+
+    # print current end time and total time taken
+    end_time = datetime.now().time()
+    print("End Time:", end_time)
+
+
