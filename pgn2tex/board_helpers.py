@@ -1,6 +1,7 @@
 import chess.pgn
 import chess
 import chess.svg
+import math
 
 from utils import load_pgn, get_section_from_level
 
@@ -46,14 +47,21 @@ def mk_latex_puzzle_table_cell(puzzle, counter, is_categorized=True, is_first_pa
     board = chess.Board(fen=puzzle["FEN"])
 
     moves = puzzle["Moves"].split(" ")
-
+    moves = [chess.Move.from_uci(move) for move in moves]
+    board.push(moves[0])
+    
     latex = ""
-    margin = 1.4
+    margin = 4.0
     
     if is_first_page:
-        margin = 1.5
+        margin = 4.0
     
-    latex += f"\\vspace{{{margin}cm}} \n \n"
+    # show the first 5 themes
+    themes = puzzle["Themes"].split(" ")
+    # remove "mate", "short", "long", "oneMove", "veryLong" from the themes
+    themes = [theme for theme in themes if theme not in ["mate", "short", "long", "oneMove", "veryLong"]]
+    themes = " ".join(themes[:5])
+    margin -= math.ceil(len(themes) / 34) * 0.2
 
     # calculate number of moves needed for one side to solve the puzzle
     # based on len of moves variable
@@ -66,13 +74,15 @@ def mk_latex_puzzle_table_cell(puzzle, counter, is_categorized=True, is_first_pa
     latex += "\\newgame \n"
     latex += "\n \n \n \n \n"
     latex += "\\phantomsection \n"
-    latex += f"{counter}. \\textbf{{{turn2str(board.turn)}}}, solved in {num_of_moves} moves \\pageref{{solution-{puzzle_id}}}. \n"
+    latex += f"{counter}. \\textbf{{{turn2str(board.turn)}}}, {num_of_moves} moves, \\pageref{{solution-{puzzle_id}}}. \n"
     latex += f"\\label{{puzzle-{puzzle_id}}} \n"
     latex += "\\fenboard{" + board.fen() + "}"
     latex += "\n"
     latex += "\n \n"
     latex += "\\scalebox{0.8}{\\showboard}"
     latex += "\n \n"
+    latex += f"\\noindent {themes} \n \n"
+    latex += f"\\hspace{{{margin}cm}} \n \n"
 
     num_of_cols = 3
     if counter % num_of_cols == 0:
@@ -99,7 +109,7 @@ def mk_latex_puzzle_solution(puzzle, counter):
     latex += "\n \n"
     latex += "\\noindent {" + solution + "} \n \n"
     # show theme of the puzzle
-    latex += f"\\noindent Theme: {puzzle['Themes']} \n \n"
+    # latex += f"\\noindent Theme: {puzzle['Themes']} \n \n"
     latex += f"\\noindent Puzzle: \\pageref{{puzzle-{puzzle['PuzzleId']}}}"
     latex += "\n \n"
     latex += "\\vspace{0.2cm} \n \n"
