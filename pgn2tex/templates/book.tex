@@ -1,4 +1,4 @@
-\documentclass{book}
+\documentclass[oneside]{book} % Use oneside to avoid margin mirroring
 \usepackage[english]{babel}
 \usepackage[scale=0.8]{geometry}
 
@@ -15,6 +15,16 @@
 \usepackage{enumitem}
 \usepackage{pdfpages}
 \usepackage{nameref}
+
+\pagestyle{fancy}
+% Clear all header and footer fields
+\fancyhf{}
+
+% Set the page number on the right for both even and odd pages
+\fancyhead[R]{\thepage}
+
+% Set the chapter title on the left for both even and odd pages
+\fancyhead[L]{\leftmark}
 
 \setlength\headheight{10pt}
 
