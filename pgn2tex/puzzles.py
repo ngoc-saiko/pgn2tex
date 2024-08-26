@@ -16,6 +16,7 @@ from argparse import ArgumentParser, HelpFormatter
 from dataclasses import dataclass
 
 from utils import load_pgn, get_section_from_level
+from board_helpers import mk_book_from_list, mk_book_from_list_table_layout
 from datetime import datetime
 
 
@@ -54,112 +55,6 @@ def open_themes_desc(path: Path) -> Dict[str, PuzzleTheme]:
             if name[:-d] in themes:
                 themes[name[:-d]].desc = child.text
     return themes
-
-
-def turn2str(turn):
-    if turn == chess.WHITE:
-        return "White"
-    else:
-        return "Black"
-
-
-def mk_latex_puzzle(puzzle, counter):
-    board = chess.Board(fen=puzzle["FEN"])
-
-    moves = puzzle["Moves"].split(" ")
-    moves = [chess.Move.from_uci(move) for move in moves]
-    board.push(moves[0])
-
-    latex = ""
-    if counter > 9:
-        latex += "\\vspace{2.2cm} \n \n"
-    else:
-        latex += "\\vspace{2cm} \n \n"
-        
-    # add section to the puzzle
-    puzzle_id = puzzle["PuzzleId"]
-    latex += "\\newgame \n"
-    latex += "\n \n \n \n \n"
-    latex += "\\phantomsection \n"
-    latex += f"{counter}. \\textbf{{{turn2str(board.turn)}}} to move \\pageref{{solution-{puzzle_id}}}. \n"
-    latex += f"\\label{{puzzle-{puzzle_id}}} \n"
-    latex += "\\fenboard{" + board.fen() + "}"
-    latex += "\n"
-    latex += "\n \n"
-    latex += "\\scalebox{0.8}{\\showboard}"
-    latex += "\n \n"
-
-    return latex
-
-def mk_latex_puzzle_solution(puzzle, counter):
-    board = chess.Board(fen=puzzle["FEN"])
-
-    moves = puzzle["Moves"].split(" ")
-    moves = [chess.Move.from_uci(move) for move in moves]
-    board.push(moves[0])
-    solution = board.variation_san(moves[1:])
-    # escape the # character
-    solution = solution.replace("#", "\\#")
-
-    latex = f"\\noindent\\textbf{{{counter}. {turn2str(board.turn)} to move. }}\n"
-    latex += "\\phantomsection \n"
-    latex += f"\\label{{solution-{puzzle['PuzzleId']}}}\n \n"
-    latex += "\n \n"
-    latex += "{" + solution + "} \n \n"
-    latex += f"Puzzle: \\pageref{{puzzle-{puzzle['PuzzleId']}}}"
-    latex += "\n \n"
-    latex += "\\vspace{0.2cm} \n \n"
-
-    return latex
-
-
-def mk_book_from_list(L, level=0, book=True) -> str:
-    latex = ""
-    for l in L:
-        if l[1] == "puzzles":
-            latex += "\\newpage \n"
-            latex += get_section_from_level(l[0], level, book)
-            latex += "\n"
-            latex += l[3]
-            latex += "\\begin{multicols}{3} \n"
-            counter = 1
-            for p in l[2]:
-                latex += "\\begin{samepage} \n"
-                latex += mk_latex_puzzle(p, counter)
-                latex += "\\end{samepage}"
-                # new page after 9 puzzles
-                if counter % 9 == 0 and counter < len(l[2]):
-                    latex += "\\end{multicols} \n"
-                    latex += "\\newpage \n"
-                    latex += "\n"
-                    latex += l[3]
-                    latex += "\n"
-                    latex += "\\begin{multicols}{3} \n"
-                counter += 1
-            latex += "\\end{multicols} \n"
-            # put solution to separate page
-            latex += "\\newpage \n"
-            latex += f"\\noindent\\textbf{{Solution for {l[0]}}} % Custom heading \n"
-            latex += "\n"
-            latex += l[3]
-            counter = 1
-            latex += "\\begin{multicols}{3} \n"
-            for p in l[2]:
-                latex += "\\begin{samepage} \n"
-                latex += mk_latex_puzzle_solution(p, counter)
-                latex += "\\end{samepage}"
-                latex += "\n \n"
-
-                counter += 1
-            latex += "\\end{multicols} \n"
-
-        else:
-            latex += get_section_from_level(l[0], level, book)
-            latex += "\n"
-            latex += l[3]
-            latex += mk_book_from_list(l[2], level=level + 1, book=book)
-
-    return latex
 
 
 themes = open_themes_desc(Path("data/puzzleTheme.xml"))
@@ -234,6 +129,18 @@ if __name__ == "__main__":
         default=500,
     )
 
+    # add argument is_categorized, default = True
+    parser.add_argument(
+        "--is_categorized",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--is_uncategorized",
+        dest="is_categorized",
+        action="store_false",
+    )
+    parser.set_defaults(is_categorized=True)
+
     # print current start time
     current_time = datetime.now().time()
     print("Start Time:", current_time)
@@ -244,12 +151,13 @@ if __name__ == "__main__":
 
     L = []
 
+
     for diff in range(args.min_rating, args.max_rating, args.step_size):
         # puzzles[Themes] is a string with themes separated by space
         # remove all the themes except the first one
         # only do it when args.theme is None
-        if args.theme is None:
-            puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
+#        if args.theme is None:
+#            puzzles["Themes"] = puzzles["Themes"].str.split(" ").str[0]
 
         p = puzzles[puzzles["Rating"] <= diff]
 
@@ -260,29 +168,46 @@ if __name__ == "__main__":
                 args.page_number
             )  # We take a subsample of the puzzles so the filtering is not too slow
 
-        diff_L = []
-        for tag, theme in themes.items():
-            if args.theme is not None and tag not in args.theme:
-                continue
+        if args.is_categorized:
+            diff_L = []
+            for tag, theme in themes.items():
+                if args.theme is not None and tag not in args.theme:
+                    continue
 
-            pt = p[p["Themes"].str.contains(tag)]
+                pt = p[p["Themes"].str.contains(tag)]
 
-            if len(pt):
+                if len(pt):
+                    if (args.problems is not None and args.problems > 0):
+                        sample_count = min(len(pt), args.problems)
+                    else:
+                        sample_count = len(pt)
+                    # puzzles are displayed in 3 columns
+                    # so we need to make sure that the number of puzzles is divisible by 3
+                    sample_count = sample_count - sample_count % 3
+                    if sample_count == 0:
+                        continue
+                    pt = pt.sample(sample_count).to_dict("records")
+                    diff_L.append((theme.name, "puzzles", pt, theme.desc))
+
+            L.append((f"{diff} rated problems.", "list", diff_L, ""))
+        else:
+            if args.theme is not None:
+                p = p[p["Themes"].str.contains("|".join(args.theme))]
+
+            if len(p):
                 if (args.problems is not None and args.problems > 0):
-                    sample_count = min(len(pt), args.problems)
+                    sample_count = min(len(p), args.problems)
                 else:
-                    sample_count = len(pt)
+                    sample_count = len(p)
                 # puzzles are displayed in 3 columns
                 # so we need to make sure that the number of puzzles is divisible by 3
                 sample_count = sample_count - sample_count % 3
                 if sample_count == 0:
                     continue
-                pt = pt.sample(sample_count).to_dict("records")
-                diff_L.append((theme.name, "puzzles", pt, theme.desc))
+                p = p.sample(sample_count).to_dict("records")
+                L.append((f"{diff} rated problems.", "puzzles", p, ""))
 
-        L.append((f"{diff} rated problems.", "list", diff_L, ""))
-
-    content = mk_book_from_list(L, level=0, book=True)
+    content = mk_book_from_list_table_layout(L, level=0, book=True, is_categorized=args.is_categorized)
 
     if args.template is None:
         template = "$content"
